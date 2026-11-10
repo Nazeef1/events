@@ -6,14 +6,20 @@ import type { Booking } from "@/lib/types";
 
 export default function TicketsPage() {
   const [bookings, setBookings] = useState<Booking[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.get<Booking[]>("/bookings").then((all) => setBookings(all.filter((b) => b.status === "CONFIRMED")));
+    api
+      .get<Booking[]>("/bookings")
+      .then((all) => setBookings(all.filter((b) => b.status === "CONFIRMED")))
+      .catch((e) => setError(e.message));
   }, []);
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-12">
       <h1 className="font-display text-3xl mb-8">My tickets</h1>
+
+      {error && <p className="text-rust text-sm">{error}</p>}
 
       {bookings && bookings.length === 0 && <p className="text-muted text-sm">No confirmed tickets yet.</p>}
 

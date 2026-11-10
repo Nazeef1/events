@@ -9,5 +9,9 @@ class Settings(BaseSettings):
     service_name: str = "identity-service"
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # When both are set, this account is created as ADMIN at startup if missing.
+    admin_email: str = ""
+    admin_password: str = ""
+
 
 settings = Settings()

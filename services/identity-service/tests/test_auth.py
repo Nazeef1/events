@@ -37,7 +37,23 @@ def test_admin_only_user_listing(client):
     resp = client.get("/users", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 403  # organizer cannot list all users
 
-    admin_reg = client.post("/auth/register", json={"email": "admin@example.com", "full_name": "Admin", "password": "password123", "role": "ADMIN"})
-    admin_token = admin_reg.json()["access_token"]
+    from eventsphere_common.security import create_access_token
+
+    admin_token = create_access_token("admin-id", "ADMIN", "admin@example.com")
     resp = client.get("/users", headers={"Authorization": f"Bearer {admin_token}"})
     assert resp.status_code == 200
+
+
+def test_cannot_self_register_as_admin(client):
+    resp = client.post("/auth/register", json={"email": "evil@example.com", "full_name": "Evil", "password": "password123", "role": "ADMIN"})
+    assert resp.status_code == 422
+
+
+def test_user_lookup_requires_auth_and_ownership(client):
+    a = client.post("/auth/register", json={"email": "a@example.com", "full_name": "A", "password": "password123"}).json()
+    b = client.post("/auth/register", json={"email": "b@example.com", "full_name": "B", "password": "password123"}).json()
+    url = f"/users/{a['user']['id']}"
+
+    assert client.get(url).status_code == 401
+    assert client.get(url, headers={"Authorization": f"Bearer {b['access_token']}"}).status_code == 403
+    assert client.get(url, headers={"Authorization": f"Bearer {a['access_token']}"}).status_code == 200

@@ -16,7 +16,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./infrastructure/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       # IMPORTANT: pg_isready with no -d defaults to checking a database
       # named after -U (i.e. "eventsphere"), which doesn't exist -- only
@@ -34,7 +34,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -48,8 +48,8 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
-      - "5672:5672"
-      - "15672:15672" # management UI: http://localhost:15672
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672" # management UI: http://localhost:15672
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -177,11 +177,13 @@ services:
     environment:
       <<: *python-service-env
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/identity_db
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     depends_on:
       postgres: { condition: service_healthy }
       identity-migrate: { condition: service_completed_successfully }
     ports:
-      - "8001:8000"
+      - "127.0.0.1:8001:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -199,7 +201,7 @@ services:
       postgres: { condition: service_healthy }
       event-migrate: { condition: service_completed_successfully }
     ports:
-      - "8002:8000"
+      - "127.0.0.1:8002:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -221,7 +223,7 @@ services:
       booking-migrate: { condition: service_completed_successfully }
       event-service: { condition: service_healthy }
     ports:
-      - "8003:8000"
+      - "127.0.0.1:8003:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -239,12 +241,14 @@ services:
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
       RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET}
+      PAYMENT_MODE: ${PAYMENT_MODE:-razorpay}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
     depends_on:
       postgres: { condition: service_healthy }
       payment-migrate: { condition: service_completed_successfully }
       booking-service: { condition: service_healthy }
     ports:
-      - "8004:8000"
+      - "127.0.0.1:8004:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -263,7 +267,7 @@ services:
       rabbitmq: { condition: service_healthy }
       notification-migrate: { condition: service_completed_successfully }
     ports:
-      - "8005:8000"
+      - "127.0.0.1:8005:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -286,7 +290,7 @@ services:
       payment-service: { condition: service_healthy }
       booking-service: { condition: service_healthy }
     ports:
-      - "8006:8000"
+      - "127.0.0.1:8006:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -305,7 +309,7 @@ services:
       rabbitmq: { condition: service_healthy }
       analytics-migrate: { condition: service_completed_successfully }
     ports:
-      - "8007:8000"
+      - "127.0.0.1:8007:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -343,14 +347,27 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* values are inlined at build time, so this must be a build arg.
+        NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:8080/api}
     restart: unless-stopped
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8080/api
-      NEXT_PUBLIC_RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
     depends_on:
       - api-gateway
     ports:
       - "3000:3000"
+
+  # Optional database browser: docker compose --profile tools up -d adminer
+  # then open http://localhost:8081 (System: PostgreSQL, Server: postgres).
+  adminer:
+    image: adminer:4.8.1
+    profiles: ["tools"]
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      - postgres
+    ports:
+      - "127.0.0.1:8081:8080"
 
 volumes:
   postgres_data:

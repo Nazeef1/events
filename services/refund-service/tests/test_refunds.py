@@ -27,6 +27,16 @@ def test_refund_is_idempotent(client, mock_clients):
     assert mock_clients["refund_calls"] == ["pay-2"]  # Razorpay refund only ever called once
 
 
+def test_unrelated_organizer_cannot_refund(client, mock_clients):
+    _, payer = auth_header("ATTENDEE")
+    mock_clients["seed_payment"]("pay-3", "booking-3", user_id=payer)
+    headers, _ = auth_header("ORGANIZER")
+
+    resp = client.post("/refunds", json={"booking_id": "booking-3"}, headers=headers)
+    assert resp.status_code == 403
+    assert mock_clients["refund_calls"] == []  # rejected before any money moved
+
+
 def test_refund_without_payment_returns_404(client, mock_clients):
     headers, _ = auth_header("ATTENDEE")
     resp = client.post("/refunds", json={"booking_id": "no-such-booking"}, headers=headers)

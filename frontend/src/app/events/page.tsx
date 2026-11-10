@@ -78,7 +78,7 @@ export default function EventsPage() {
         <p className="text-muted text-sm">No events match your filters.</p>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-line hairline mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         {events?.items.map((e) => (
           <div key={e.id} className="bg-paper">
             <EventCard event={e} />

@@ -73,7 +73,7 @@ def list_events(
     min_price: float | None = None,
     max_price: float | None = None,
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=200),
     mine: bool = False,
     admin_all: bool = False,
     db: Session = Depends(get_db),
@@ -90,7 +90,7 @@ def list_events(
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login required to view your events")
         stmt = stmt.where(Event.organizer_id == user.id)
     else:
-        stmt = stmt.where(Event.status == EventStatus.PUBLISHED)
+        stmt = stmt.where(Event.status == EventStatus.PUBLISHED, Event.ends_at >= datetime.now(timezone.utc))
 
     if q:
         like = f"%{q.lower()}%"
@@ -148,7 +148,7 @@ def get_event(event_id: str, db: Session = Depends(get_db), user: CurrentUser | 
     if event.status != EventStatus.PUBLISHED and not is_owner:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Event not found")
 
-    _publish_safe("EventViewed", {"event_id": event.id, "viewer_id": user.id if user else None})
+    _publish_safe("EventViewed", {"event_id": event.id, "organizer_id": event.organizer_id, "viewer_id": user.id if user else None})
     return event
 
 
@@ -158,7 +158,11 @@ def update_event(event_id: str, payload: EventUpdate, user: CurrentUser = Depend
     if event.status == EventStatus.CANCELLED:
         raise HTTPException(status.HTTP_409_CONFLICT, "Cancelled events cannot be edited")
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if changes.get("starts_at", event.starts_at) >= changes.get("ends_at", event.ends_at):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The event must end after it starts")
+
+    for field, value in changes.items():
         setattr(event, field, value)
     db.commit()
     db.refresh(event)

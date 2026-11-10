@@ -20,7 +20,9 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await login(email, password);
-      router.push("/");
+      const next = new URLSearchParams(window.location.search).get("next");
+      // Same-site paths only, so a crafted link can't redirect off EventSphere.
+      router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : "/");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
     } finally {

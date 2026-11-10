@@ -172,7 +172,15 @@ Once healthy:
 - RabbitMQ management UI: http://localhost:15672 (user/pass from `.env`)
 - Individual services are also reachable directly on 8001–8007 for debugging.
 
-First run automatically creates all 7 databases and runs Alembic migrations for every service (each service's container runs `alembic upgrade head` before starting `uvicorn`).
+First run automatically creates all 7 databases and runs Alembic migrations for every service (a one-shot `*-migrate` container runs `alembic upgrade head` before each service starts).
+
+Optional local conveniences, all set in `.env`:
+
+- `PAYMENT_MODE=mock` replaces Razorpay Checkout with a built-in simulator, so the whole booking, payment and refund flow works without keys. No money moves. It is refused when `ENVIRONMENT=production`.
+- `ADMIN_EMAIL` / `ADMIN_PASSWORD` create the platform admin at startup. Public sign-up can only create attendees and organizers.
+- `python scripts/seed_demo.py` fills an empty install with demo events.
+
+PostgreSQL, Redis, RabbitMQ, and the individual services publish on `127.0.0.1` only. For deployment, set `PUBLIC_API_BASE_URL` at build time, because Next.js inlines it into the browser bundle.
 
 ## 12. Testing
 

@@ -7,13 +7,16 @@ import type { User } from "@/lib/types";
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[] | null>(null);
 
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
-    api.get<User[]>("/users").then(setUsers);
+    api.get<User[]>("/users").then(setUsers).catch((e) => setError(e.message));
   }, []);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-12">
       <h1 className="font-display text-3xl mb-8">Users</h1>
+      {error && <p className="text-rust text-sm mb-4">{error}</p>}
       <table className="w-full text-sm hairline border-collapse">
         <thead>
           <tr className="text-left text-xs uppercase tracking-wide text-muted border-b border-line">

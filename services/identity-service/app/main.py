@@ -1,16 +1,51 @@
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 
+from eventsphere_common.security import hash_password
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
 
 from .config import settings
+from .database import SessionLocal
+from .models import User, UserRole
 from .routers import auth, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
-app = FastAPI(title="EventSphere Identity Service", version="1.0.0")
+
+def ensure_bootstrap_admin() -> None:
+    """Public registration cannot create admins, so the first one comes from env."""
+    if not (settings.admin_email and settings.admin_password):
+        return
+    db = SessionLocal()
+    try:
+        existing = db.execute(select(User).where(User.email == settings.admin_email)).scalar_one_or_none()
+        if existing:
+            if existing.role != UserRole.ADMIN:
+                logging.getLogger("eventsphere.identity").warning("ADMIN_EMAIL belongs to a non-admin account; not changing it")
+            return
+        db.add(User(
+            email=settings.admin_email,
+            full_name="Platform Admin",
+            password_hash=hash_password(settings.admin_password),
+            role=UserRole.ADMIN,
+        ))
+        db.commit()
+        logging.getLogger("eventsphere.identity").info("Created bootstrap admin account")
+    finally:
+        db.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    ensure_bootstrap_admin()
+    yield
+
+
+app = FastAPI(title="EventSphere Identity Service", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

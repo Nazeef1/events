@@ -37,11 +37,11 @@ class BookingServiceClient:
 
     def mark_refund_pending(self, booking_id: str) -> None:
         with httpx.Client(timeout=5.0) as client:
-            client.post(f"{self._base}/internal/bookings/{booking_id}/mark-refund-pending")
+            client.post(f"{self._base}/internal/bookings/{booking_id}/mark-refund-pending").raise_for_status()
 
     def mark_refunded(self, booking_id: str) -> None:
         with httpx.Client(timeout=5.0) as client:
-            client.post(f"{self._base}/internal/bookings/{booking_id}/mark-refunded")
+            client.post(f"{self._base}/internal/bookings/{booking_id}/mark-refunded").raise_for_status()
 
 
 payment_service_client = PaymentServiceClient()

@@ -25,6 +25,7 @@ class TicketTypeCreate(BaseModel):
 
 class TicketTypeOut(BaseModel):
     id: str
+    event_id: str
     name: str
     description: str
     price: Decimal

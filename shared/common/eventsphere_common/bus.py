@@ -126,8 +126,9 @@ def consume_forever(
             handler(envelope)
             ch.basic_ack(delivery_tag=method.delivery_tag)
         except Exception:  # noqa: BLE001
-            logger.exception("Failed to process message, sending to DLQ")
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+            retry = not method.redelivered
+            logger.exception("Failed to process message, %s", "retrying once" if retry else "sending to DLQ")
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=retry)
 
     channel.basic_consume(queue=queue_name, on_message_callback=_on_message)
     logger.info("Consumer listening on queue=%s keys=%s", queue_name, routing_keys)

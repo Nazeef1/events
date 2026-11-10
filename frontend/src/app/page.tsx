@@ -51,7 +51,7 @@ export default function HomePage() {
           <p className="text-muted text-sm">No published events yet. Check back soon, or create one as an organizer.</p>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-line hairline">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {events?.items.map((e) => (
             <div key={e.id} className="bg-paper">
               <EventCard event={e} />

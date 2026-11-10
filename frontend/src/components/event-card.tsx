@@ -13,7 +13,7 @@ function formatTime(iso: string) {
 
 export function EventCard({ event }: { event: EventSummary }) {
   const priceLabel =
-    event.min_price == null
+    event.min_price == null || (Number(event.min_price) === 0 && Number(event.max_price) === 0)
       ? "Free"
       : event.min_price === event.max_price
       ? `₹${Number(event.min_price).toLocaleString("en-IN")}`

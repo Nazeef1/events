@@ -13,8 +13,14 @@ from ..event_client import event_service_client
 from ..models import Booking, BookingItem, BookingStatus, IdempotentRequest
 from ..redis_holds import ticket_hold_store
 from ..schemas import BookingOut, ReserveRequest
+from .internal import confirm_booking, restock_booking
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
+
+
+def _parse_utc(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def _publish_safe(event_type: str, data: dict) -> None:
@@ -35,14 +41,22 @@ def reserve_tickets(
         existing = db.get(IdempotentRequest, idempotency_key)
         if existing:
             booking = db.get(Booking, existing.booking_id, options=[selectinload(Booking.items)])
-            if booking:
+            if booking and booking.user_id == user.id:
                 return booking
+
+    ticket_ids = [item.ticket_type_id for item in payload.items]
+    if len(ticket_ids) != len(set(ticket_ids)):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Each ticket type can only appear once in a reservation")
 
     event_summary = event_service_client.get_event_summary(payload.event_id)
     if not event_summary:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Event not found")
     if event_summary["status"] != "PUBLISHED":
         raise HTTPException(status.HTTP_409_CONFLICT, "This event is not open for booking")
+
+    now = datetime.now(timezone.utc)
+    if event_summary.get("starts_at") and _parse_utc(event_summary["starts_at"]) <= now:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This event has already started")
 
     reservation_id = str(uuid.uuid4())
     reserved_types: list[str] = []
@@ -54,6 +68,12 @@ def reserve_tickets(
             tt = event_service_client.get_ticket_type(item.ticket_type_id)
             if not tt:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, f"Ticket type {item.ticket_type_id} not found")
+            if tt.get("event_id", payload.event_id) != payload.event_id:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"'{tt['name']}' does not belong to this event")
+            if tt.get("sale_starts_at") and now < _parse_utc(tt["sale_starts_at"]):
+                raise HTTPException(status.HTTP_409_CONFLICT, f"'{tt['name']}' is not on sale yet")
+            if tt.get("sale_ends_at") and now > _parse_utc(tt["sale_ends_at"]):
+                raise HTTPException(status.HTTP_409_CONFLICT, f"Sales for '{tt['name']}' have ended")
 
             success, held = ticket_hold_store.try_reserve(
                 ticket_type_id=item.ticket_type_id,
@@ -107,6 +127,9 @@ def reserve_tickets(
         "booking_id": booking.id, "user_id": user.id, "event_id": payload.event_id,
         "amount": float(total), "ticket_ids": [i.ticket_type_id for i in items],
     })
+    if total == 0:
+        # Nothing to charge (and Razorpay rejects zero-value orders).
+        return confirm_booking(booking.id, payment_id="free", db=db)
     return booking
 
 
@@ -137,7 +160,7 @@ def list_bookings_for_event(event_id: str, user: CurrentUser = Depends(require_r
 
 
 @router.post("/{booking_id}/cancel", response_model=BookingOut)
-def cancel_booking(booking_id: str, user: CurrentUser = Depends(require_roles("ATTENDEE", "ADMIN")), db: Session = Depends(get_db)):
+def cancel_booking(booking_id: str, user: CurrentUser = Depends(require_roles("ATTENDEE", "ORGANIZER", "ADMIN")), db: Session = Depends(get_db)):
     booking = db.get(Booking, booking_id, options=[selectinload(Booking.items)])
     if not booking:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Booking not found")
@@ -148,16 +171,21 @@ def cancel_booking(booking_id: str, user: CurrentUser = Depends(require_roles("A
         for item in booking.items:
             ticket_hold_store.release(item.ticket_type_id, booking.reservation_id)
         booking.status = BookingStatus.CANCELLED
+    elif booking.status == BookingStatus.CONFIRMED and float(booking.total_amount) == 0:
+        restock_booking(booking)
+        booking.status = BookingStatus.CANCELLED
     elif booking.status == BookingStatus.CONFIRMED:
         booking.status = BookingStatus.REFUND_PENDING
-        _publish_safe("RefundRequested", {
-            "booking_id": booking.id, "user_id": booking.user_id, "amount": float(booking.total_amount),
-        })
     else:
         raise HTTPException(status.HTTP_409_CONFLICT, f"Booking in status {booking.status.value} cannot be cancelled")
 
     db.commit()
     db.refresh(booking)
+    # Published only after commit: the consumers read this state back.
+    if booking.status == BookingStatus.REFUND_PENDING:
+        _publish_safe("RefundRequested", {
+            "booking_id": booking.id, "user_id": booking.user_id, "amount": float(booking.total_amount),
+        })
     if booking.status == BookingStatus.CANCELLED:
-        _publish_safe("BookingCancelled", {"booking_id": booking.id, "user_id": booking.user_id})
+        _publish_safe("BookingCancelled", {"booking_id": booking.id, "user_id": booking.user_id, "event_id": booking.event_id})
     return booking

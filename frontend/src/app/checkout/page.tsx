@@ -13,9 +13,10 @@ interface CreateOrderResponse {
   amount_paise: number;
   currency: string;
   booking_id: string;
+  mode: "razorpay" | "mock";
 }
 
-type Stage = "review" | "processing" | "success" | "failed" | "expired";
+type Stage = "review" | "processing" | "mock" | "success" | "failed" | "expired";
 
 declare global {
   interface Window {
@@ -41,7 +42,7 @@ function CheckoutContent() {
   const [error, setError] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>("review");
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
-  const [scriptReady, setScriptReady] = useState(false);
+  const [mockOrderId, setMockOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!bookingId) return;
@@ -74,6 +75,17 @@ function CheckoutContent() {
     try {
       const order = await api.post<CreateOrderResponse>("/payments/order", { booking_id: booking.id });
 
+      if (order.mode === "mock") {
+        setMockOrderId(order.razorpay_order_id);
+        setStage("mock");
+        return;
+      }
+      if (!window.Razorpay) {
+        setError("The payment gateway could not be loaded. Check your connection and try again.");
+        setStage("review");
+        return;
+      }
+
       const options = {
         key: order.razorpay_key_id,
         amount: order.amount_paise,
@@ -105,6 +117,18 @@ function CheckoutContent() {
     }
   }, [booking, user]);
 
+  const completeMockPayment = useCallback(async () => {
+    setStage("processing");
+    try {
+      const signed = await api.post<Record<string, string>>("/payments/mock-pay", { razorpay_order_id: mockOrderId });
+      await api.post<Payment>("/payments/verify", signed);
+      setStage("success");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Payment verification failed.");
+      setStage("failed");
+    }
+  }, [mockOrderId]);
+
   if (authLoading) return null;
   if (!bookingId) return <div className="mx-auto max-w-lg px-6 py-20 text-muted text-sm">No booking specified.</div>;
   if (error && !booking) return <div className="mx-auto max-w-lg px-6 py-20 text-rust text-sm">{error}</div>;
@@ -115,7 +139,7 @@ function CheckoutContent() {
 
   return (
     <div className="mx-auto max-w-lg px-6 py-16">
-      <Script src="https://checkout.razorpay.com/v1/checkout.js" onLoad={() => setScriptReady(true)} />
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" />
 
       <h1 className="font-display text-3xl mb-1">Checkout</h1>
       <p className="text-muted text-sm mb-8">Review your order and complete payment.</p>
@@ -141,14 +165,27 @@ function CheckoutContent() {
         </p>
       )}
 
+      {stage === "review" && error && <p className="text-rust text-sm mb-4 text-center">{error}</p>}
+
       {stage === "review" && (
-        <button
-          onClick={startPayment}
-          disabled={!scriptReady}
-          className="w-full bg-ink text-paper px-5 py-3 text-sm hover:bg-forest transition-colors disabled:opacity-40"
-        >
-          {scriptReady ? "Pay with Razorpay (Test Mode)" : "Loading payment gateway…"}
+        <button onClick={startPayment} className="w-full bg-ink text-paper px-5 py-3 text-sm hover:bg-forest transition-colors">
+          Proceed to payment
         </button>
+      )}
+
+      {stage === "mock" && (
+        <div className="hairline p-5 text-center">
+          <p className="font-mono text-xs uppercase tracking-widest text-gold mb-2">Simulated payment</p>
+          <p className="text-sm text-muted mb-4">Payment simulator is on. No real money will move.</p>
+          <div className="flex gap-3 justify-center">
+            <button onClick={completeMockPayment} className="bg-ink text-paper px-5 py-2.5 text-sm hover:bg-forest transition-colors">
+              Complete test payment
+            </button>
+            <button onClick={() => setStage("review")} className="hairline px-5 py-2.5 text-sm hover:bg-ink hover:text-paper transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       {stage === "processing" && <p className="text-center text-sm text-muted">Payment processing…</p>}

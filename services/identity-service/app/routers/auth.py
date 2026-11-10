@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import User
+from ..models import User, UserRole
 from ..schemas import LoginRequest, RefreshRequest, RegisterRequest, TokenResponse, UpdateProfileRequest, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -35,7 +35,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         email=payload.email,
         full_name=payload.full_name,
         password_hash=hash_password(payload.password),
-        role=payload.role,
+        role=UserRole(payload.role),
         phone=payload.phone,
     )
     db.add(user)

@@ -25,8 +25,8 @@ def handle_event(envelope: EventEnvelope) -> None:
             event_id = envelope.data["event_id"]
             affected = booking_service_client.get_bookings_by_event(event_id, booking_status="CONFIRMED")
             for booking in affected:
-                booking_service_client.mark_refund_pending(booking["id"])
                 try:
+                    booking_service_client.mark_refund_pending(booking["id"])
                     process_refund_for_booking(db, booking["id"], reason=f"Event '{envelope.data.get('title', event_id)}' was cancelled by the organizer")
                 except Exception:  # noqa: BLE001
                     logger.exception("Failed to refund booking %s for cancelled event %s", booking["id"], event_id)

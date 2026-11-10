@@ -25,7 +25,7 @@ def sweep_expired_reservations() -> int:
             for item in booking.items:
                 ticket_hold_store.release(item.ticket_type_id, booking.reservation_id)
             try:
-                publish_event("BookingExpired", settings.service_name, {"booking_id": booking.id, "user_id": booking.user_id})
+                publish_event("BookingExpired", settings.service_name, {"booking_id": booking.id, "user_id": booking.user_id, "event_id": booking.event_id})
             except Exception:  # noqa: BLE001
                 pass
             count += 1

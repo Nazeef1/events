@@ -31,14 +31,14 @@ def handle_event(envelope: EventEnvelope) -> None:
         event_id = data.get("event_id")
 
         if envelope.event_type == "EventViewed" and event_id:
-            stats = _get_or_create_stats(db, event_id)
+            stats = _get_or_create_stats(db, event_id, data.get("organizer_id", ""))
             stats.views += 1
 
         elif envelope.event_type == "BookingCreated" and event_id:
             stats = _get_or_create_stats(db, event_id)
             stats.bookings_created += 1
 
-        elif envelope.event_type == "BookingConfirmed":
+        elif envelope.event_type == "BookingConfirmed" and event_id:
             stats = _get_or_create_stats(db, event_id, data.get("organizer_id", ""))
             stats.bookings_confirmed += 1
             stats.tickets_sold += int(data.get("ticket_count", 1))
@@ -47,17 +47,14 @@ def handle_event(envelope: EventEnvelope) -> None:
             stats = _get_or_create_stats(db, event_id)
             stats.bookings_cancelled += 1
 
-        elif envelope.event_type == "PaymentSucceeded":
+        elif envelope.event_type == "PaymentSucceeded" and event_id:
             stats = _get_or_create_stats(db, event_id, data.get("organizer_id", ""))
             stats.revenue = float(stats.revenue) + float(data.get("amount", 0))
 
-        elif envelope.event_type == "RefundProcessed":
-            # RefundProcessed doesn't carry event_id directly; analytics still
-            # records amount/refund counts globally-scoped to the booking's
-            # event once we can resolve it. For this build we track refunds
-            # at the organizer level via revenue-service instead, and simply
-            # mark this event processed here to avoid reprocessing.
-            pass
+        elif envelope.event_type == "RefundProcessed" and event_id:
+            stats = _get_or_create_stats(db, event_id)
+            stats.refunds_count += 1
+            stats.refunds_amount = float(stats.refunds_amount) + float(data.get("amount", 0))
 
         elif envelope.event_type == "AttendanceRecorded" and event_id:
             stats = _get_or_create_stats(db, event_id)

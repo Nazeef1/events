@@ -60,6 +60,17 @@ def test_verify_rejects_bad_signature_and_does_not_confirm_booking(client, mock_
     assert "booking-4" not in mock_booking_service["confirmed"]
 
 
+def test_mock_pay_is_disabled_unless_mock_mode(client, mock_razorpay, mock_booking_service):
+    headers, _ = auth_header("ATTENDEE")
+    resp = client.post("/payments/mock-pay", json={"razorpay_order_id": "order_x"}, headers=headers)
+    assert resp.status_code == 404
+
+
+def test_webhook_rejected_without_valid_signature(client, mock_razorpay, mock_booking_service):
+    resp = client.post("/payments/webhook", content=b"{}", headers={"X-Razorpay-Signature": "forged"})
+    assert resp.status_code == 400
+
+
 def test_verify_is_idempotent_on_replay(client, mock_razorpay, mock_booking_service):
     headers, uid = auth_header("ATTENDEE")
     mock_booking_service["seed_booking"]("booking-5", user_id=uid, amount=750.0)

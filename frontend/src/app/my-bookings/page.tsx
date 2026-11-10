@@ -22,7 +22,10 @@ export default function MyBookingsPage() {
     load();
   }, [load]);
 
-  async function cancelBooking(id: string) {
+  async function cancelBooking(booking: Booking) {
+    const { id } = booking;
+    const consequence = booking.status === "CONFIRMED" && Number(booking.total_amount) > 0 ? " You will be refunded in full." : "";
+    if (!window.confirm(`Cancel this booking?${consequence}`)) return;
     setCancellingId(id);
     try {
       await api.post(`/bookings/${id}/cancel`);
@@ -60,7 +63,7 @@ export default function MyBookingsPage() {
               )}
               {(b.status === "CONFIRMED" || b.status === "PENDING_PAYMENT") && (
                 <button
-                  onClick={() => cancelBooking(b.id)}
+                  onClick={() => cancelBooking(b)}
                   disabled={cancellingId === b.id}
                   className="hairline px-3 py-1.5 text-xs hover:bg-rust hover:text-paper hover:border-rust transition-colors disabled:opacity-40"
                 >

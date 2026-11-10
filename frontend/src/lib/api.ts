@@ -13,11 +13,51 @@ function getToken(): string | null {
   return window.localStorage.getItem("es_access_token");
 }
 
+let refreshInFlight: Promise<boolean> | null = null;
+
+// Concurrent 401s share one refresh, since a page often fires several requests at once.
+function refreshAccessToken(): Promise<boolean> {
+  const refreshToken = typeof window === "undefined" ? null : window.localStorage.getItem("es_refresh_token");
+  if (!refreshToken) return Promise.resolve(false);
+  refreshInFlight ??= fetch(`${API_BASE}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  })
+    .then(async (res) => {
+      if (!res.ok) return false;
+      const tokens = await res.json();
+      setAuthTokens(tokens.access_token, tokens.refresh_token);
+      return true;
+    })
+    .catch(() => false)
+    .finally(() => {
+      refreshInFlight = null;
+    });
+  return refreshInFlight;
+}
+
+function errorMessage(body: unknown, status: number): string {
+  const detail = body && typeof body === "object" ? (body as { detail?: unknown }).detail : undefined;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    // FastAPI validation errors arrive as a list of { loc, msg }.
+    return detail
+      .map((d: { loc?: unknown[]; msg?: string }) => {
+        const field = d.loc?.[d.loc.length - 1];
+        const message = (d.msg ?? "is invalid").replace(/^Value error, /, "");
+        return typeof field === "string" ? `${field.replace(/_/g, " ")}: ${message}` : message;
+      })
+      .join("; ");
+  }
+  return `Request failed with status ${status}`;
+}
+
 export async function apiFetch<T>(
   path: string,
-  options: RequestInit & { auth?: boolean; idempotencyKey?: string } = {}
+  options: RequestInit & { auth?: boolean; idempotencyKey?: string; isRetry?: boolean } = {}
 ): Promise<T> {
-  const { auth = true, idempotencyKey, ...init } = options;
+  const { auth = true, idempotencyKey, isRetry = false, ...init } = options;
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
   if (auth) {
@@ -27,6 +67,10 @@ export async function apiFetch<T>(
   if (idempotencyKey) headers.set("Idempotency-Key", idempotencyKey);
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+
+  if (res.status === 401 && auth && !isRetry && (await refreshAccessToken())) {
+    return apiFetch<T>(path, { ...options, isRetry: true });
+  }
 
   if (res.status === 204) return undefined as T;
 
@@ -41,11 +85,7 @@ export async function apiFetch<T>(
   }
 
   if (!res.ok) {
-    const detail =
-      body && typeof body === "object" && "detail" in (body as Record<string, unknown>)
-        ? String((body as Record<string, unknown>).detail)
-        : `Request failed with status ${res.status}`;
-    throw new ApiError(detail, res.status);
+    throw new ApiError(errorMessage(body, res.status), res.status);
   }
 
   return body as T;

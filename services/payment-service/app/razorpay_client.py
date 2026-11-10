@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import uuid
 
 import razorpay
 
@@ -31,11 +32,25 @@ def _client() -> razorpay.Client:
     return razorpay.Client(auth=(settings.razorpay_key_id, settings.razorpay_key_secret))
 
 
+def is_mock() -> bool:
+    return settings.payment_mode == "mock"
+
+
 def to_paise(amount: float) -> int:
     return int(round(amount * 100))
 
 
+def sign_payment(order_id: str, payment_id: str) -> str:
+    return hmac.new(
+        key=settings.razorpay_key_secret.encode("utf-8"),
+        msg=f"{order_id}|{payment_id}".encode("utf-8"),
+        digestmod=hashlib.sha256,
+    ).hexdigest()
+
+
 def create_order(amount: float, receipt: str, notes: dict) -> dict:
+    if is_mock():
+        return {"id": f"order_mock_{uuid.uuid4().hex[:14]}"}
     client = _client()
     return client.order.create({
         "amount": to_paise(amount),
@@ -51,12 +66,7 @@ def verify_payment_signature(order_id: str, payment_id: str, signature: str) -> 
     Verifies HMAC-SHA256(order_id + '|' + payment_id, key_secret) == signature,
     exactly as Razorpay's Standard Checkout success callback specifies.
     """
-    generated = hmac.new(
-        key=settings.razorpay_key_secret.encode("utf-8"),
-        msg=f"{order_id}|{payment_id}".encode("utf-8"),
-        digestmod=hashlib.sha256,
-    ).hexdigest()
-    return hmac.compare_digest(generated, signature)
+    return hmac.compare_digest(sign_payment(order_id, payment_id), signature)
 
 
 def verify_webhook_signature(body: bytes, signature: str) -> bool:
@@ -69,5 +79,7 @@ def verify_webhook_signature(body: bytes, signature: str) -> bool:
 
 
 def create_refund(razorpay_payment_id: str, amount: float, notes: dict | None = None) -> dict:
+    if is_mock():
+        return {"id": f"rfnd_mock_{uuid.uuid4().hex[:14]}"}
     client = _client()
     return client.payment.refund(razorpay_payment_id, {"amount": to_paise(amount), "notes": notes or {}})

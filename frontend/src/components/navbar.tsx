@@ -14,18 +14,23 @@ export function Navbar() {
 
   return (
     <header className="hairline border-x-0 border-t-0 sticky top-0 z-40 bg-paper/95 backdrop-blur-none">
-      <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
+      <div className="mx-auto max-w-6xl px-6 py-4 flex flex-wrap items-center justify-between gap-y-3">
         <Link href="/" className="font-display text-xl tracking-tight">
           Event<span className="text-forest">Sphere</span>
         </Link>
 
-        <nav className="hidden md:flex items-center gap-7 text-sm">
+        <nav className="order-last w-full md:order-none md:w-auto flex items-center gap-5 md:gap-7 text-sm overflow-x-auto whitespace-nowrap">
           <Link href="/events" className={pathname === "/events" ? "text-ink" : "text-muted hover:text-ink"}>
             Browse Events
           </Link>
           {user && (
             <Link href="/my-bookings" className={pathname === "/my-bookings" ? "text-ink" : "text-muted hover:text-ink"}>
               My Bookings
+            </Link>
+          )}
+          {user && (
+            <Link href="/tickets" className={pathname === "/tickets" ? "text-ink" : "text-muted hover:text-ink"}>
+              My Tickets
             </Link>
           )}
           {user && (user.role === "ORGANIZER" || user.role === "ADMIN") && (

@@ -16,12 +16,17 @@ class CreateOrderResponse(BaseModel):
     amount_paise: int
     currency: str
     booking_id: str
+    mode: str = "razorpay"
 
 
 class VerifyPaymentRequest(BaseModel):
     razorpay_order_id: str
     razorpay_payment_id: str
     razorpay_signature: str
+
+
+class MockPayRequest(BaseModel):
+    razorpay_order_id: str
 
 
 class PaymentOut(BaseModel):

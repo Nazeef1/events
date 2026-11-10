@@ -18,6 +18,7 @@ class Settings(BaseSettings):
 
     rate_limit_requests: int = 120
     rate_limit_window_seconds: int = 60
+    auth_rate_limit_requests: int = 20  # login/register, per IP per window
 
 
 settings = Settings()

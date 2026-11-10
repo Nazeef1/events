@@ -1,3 +1,4 @@
+import httpx
 from eventsphere_common.bus import publish_event
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -20,6 +21,16 @@ def _publish_safe(event_type: str, data: dict) -> None:
         pass
 
 
+def restock_booking(booking: Booking) -> None:
+    """Returns a confirmed booking's tickets to sale. Idempotent per booking item."""
+    for item in booking.items:
+        event_service_client.increment_availability(
+            ticket_type_id=item.ticket_type_id,
+            quantity=item.quantity,
+            idempotency_key=f"restock:{booking.id}:{item.id}",
+        )
+
+
 @router.post("/{booking_id}/confirm", response_model=BookingOut)
 def confirm_booking(booking_id: str, payment_id: str, db: Session = Depends(get_db)):
     """Called by Payment Service after a Razorpay signature has been verified."""
@@ -33,12 +44,27 @@ def confirm_booking(booking_id: str, payment_id: str, db: Session = Depends(get_
     if booking.status != BookingStatus.PENDING_PAYMENT:
         raise HTTPException(status.HTTP_409_CONFLICT, f"Booking is {booking.status.value}, cannot confirm")
 
+    summary = event_service_client.get_event_summary(booking.event_id)
+    if summary and summary["status"] == "CANCELLED":
+        raise HTTPException(status.HTTP_409_CONFLICT, "This event has been cancelled")
+
+    decremented = []
+    try:
+        for item in booking.items:
+            event_service_client.decrement_availability(
+                ticket_type_id=item.ticket_type_id,
+                quantity=item.quantity,
+                idempotency_key=f"confirm:{booking.id}:{item.id}",
+            )
+            decremented.append(item)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != status.HTTP_409_CONFLICT:
+            raise
+        for item in decremented:
+            event_service_client.increment_availability(item.ticket_type_id, item.quantity, f"rollback:{booking.id}:{item.id}")
+        raise HTTPException(status.HTTP_409_CONFLICT, "These tickets are no longer available") from exc
+
     for item in booking.items:
-        event_service_client.decrement_availability(
-            ticket_type_id=item.ticket_type_id,
-            quantity=item.quantity,
-            idempotency_key=f"confirm:{booking.id}:{item.id}",
-        )
         ticket_hold_store.release(item.ticket_type_id, booking.reservation_id)
 
     booking.status = BookingStatus.CONFIRMED
@@ -63,7 +89,7 @@ def mark_expired(booking_id: str, db: Session = Depends(get_db)):
     booking.status = BookingStatus.EXPIRED
     db.commit()
     db.refresh(booking)
-    _publish_safe("BookingExpired", {"booking_id": booking.id, "user_id": booking.user_id})
+    _publish_safe("BookingExpired", {"booking_id": booking.id, "user_id": booking.user_id, "event_id": booking.event_id})
     return booking
 
 
@@ -100,8 +126,11 @@ def mark_refunded(booking_id: str, db: Session = Depends(get_db)):
     booking = db.get(Booking, booking_id, options=[selectinload(Booking.items)])
     if not booking:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Booking not found")
+    if booking.status == BookingStatus.REFUNDED:
+        return booking  # idempotent: refund-service may retry after a partial failure
     if booking.status != BookingStatus.REFUND_PENDING:
         raise HTTPException(status.HTTP_409_CONFLICT, f"Booking is {booking.status.value}, expected REFUND_PENDING")
+    restock_booking(booking)
     booking.status = BookingStatus.REFUNDED
     db.commit()
     db.refresh(booking)

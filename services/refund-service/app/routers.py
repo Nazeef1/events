@@ -1,12 +1,14 @@
 from datetime import datetime
 from decimal import Decimal
 
+import httpx
 from eventsphere_common.auth_deps import CurrentUser, require_roles
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .clients import booking_service_client, payment_service_client
 from .database import get_db
 from .models import Refund, RefundStatus
 from .refund_logic import process_refund_for_booking
@@ -41,13 +43,21 @@ def trigger_refund(payload: ManualRefundRequest, user: CurrentUser = Depends(req
     service's RabbitMQ consumer; this endpoint exists for
     organizer/admin-initiated refunds and for tests/support tooling.
     """
+    # Authorize before anything moves money: only the payer, the event's own
+    # organizer, or an admin may refund this booking.
+    payment = payment_service_client.get_payment_for_booking(payload.booking_id)
+    if not payment:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"No payment found for booking {payload.booking_id}; cannot refund")
+    if user.id not in (payment["user_id"], payment.get("organizer_id")) and user.role != "ADMIN":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized")
+
     try:
-        refund = process_refund_for_booking(db, payload.booking_id, reason=payload.reason)
+        booking_service_client.mark_refund_pending(payload.booking_id)
+        return process_refund_for_booking(db, payload.booking_id, reason=payload.reason)
     except ValueError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-    if refund.user_id != user.id and user.role not in ("ORGANIZER", "ADMIN"):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized")
-    return refund
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This booking cannot be refunded in its current state") from exc
 
 
 @router.get("/{refund_id}", response_model=RefundOut)
@@ -55,7 +65,7 @@ def get_refund(refund_id: str, user: CurrentUser = Depends(require_roles("ATTEND
     refund = db.get(Refund, refund_id)
     if not refund:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Refund not found")
-    if refund.user_id != user.id and user.role not in ("ORGANIZER", "ADMIN"):
+    if refund.user_id != user.id and user.role != "ADMIN":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized")
     return refund
 

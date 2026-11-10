@@ -41,6 +41,8 @@ app.add_middleware(
 )
 
 limiter = SlidingWindowRateLimiter(settings.rate_limit_requests, settings.rate_limit_window_seconds)
+auth_limiter = SlidingWindowRateLimiter(settings.auth_rate_limit_requests, settings.rate_limit_window_seconds)
+CREDENTIAL_PATHS = {"auth/login", "auth/register"}
 
 HOP_BY_HOP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "content-encoding", "content-length", "host"}
 
@@ -66,7 +68,7 @@ def health():
 @app.api_route("/api/{full_path:path}", methods=["GET", "POST", "PATCH", "PUT", "DELETE"])
 async def proxy(full_path: str, request: Request):
     client_ip = request.client.host if request.client else "unknown"
-    if not limiter.allow(client_ip):
+    if not limiter.allow(client_ip) or (full_path in CREDENTIAL_PATHS and not auth_limiter.allow(client_ip)):
         return Response(content='{"detail":"Too many requests, slow down."}', status_code=status.HTTP_429_TOO_MANY_REQUESTS, media_type="application/json")
 
     path = "/" + full_path

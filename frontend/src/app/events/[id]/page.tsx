@@ -4,8 +4,19 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import type { Booking, EventDetail } from "@/lib/types";
+import type { Booking, EventDetail, TicketType } from "@/lib/types";
 import { StatusPill } from "@/components/status-pill";
+
+const MAX_PER_TICKET_TYPE = 20; // mirrors the limit enforced by booking-service
+
+function saleStatus(tt: TicketType): string | null {
+  const now = Date.now();
+  if (now < new Date(tt.sale_starts_at).getTime()) {
+    return `On sale ${new Date(tt.sale_starts_at).toLocaleDateString("en-US", { dateStyle: "medium" })}`;
+  }
+  if (now > new Date(tt.sale_ends_at).getTime()) return "Sales ended";
+  return null;
+}
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -52,7 +63,8 @@ export default function EventDetailPage() {
         { event_id: event!.id, items },
         { idempotencyKey: `reserve-${event!.id}-${Date.now()}` }
       );
-      router.push(`/checkout?booking_id=${booking.id}`);
+      // Free bookings are confirmed immediately and skip payment.
+      router.push(booking.status === "CONFIRMED" ? `/booking/success?booking_id=${booking.id}` : `/checkout?booking_id=${booking.id}`);
     } catch (err) {
       setReserveError(err instanceof ApiError ? err.message : "Could not reserve tickets. Please try again.");
     } finally {
@@ -93,12 +105,15 @@ export default function EventDetailPage() {
           <h2 className="font-display text-lg mb-4">Select tickets</h2>
           {event.ticket_types.length === 0 && <p className="text-sm text-muted">No tickets available for this event.</p>}
           <div className="space-y-4">
-            {event.ticket_types.map((tt) => (
+            {event.ticket_types.map((tt) => {
+              const unavailableReason = saleStatus(tt);
+              const maxQuantity = unavailableReason ? 0 : Math.min(tt.quantity_available, MAX_PER_TICKET_TYPE);
+              return (
               <div key={tt.id} className="border-b border-line pb-3 last:border-0">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">{tt.name}</p>
-                    <p className="font-mono text-sm text-forest">₹{Number(tt.price).toLocaleString("en-IN")}</p>
+                    <p className="font-mono text-sm text-forest">{Number(tt.price) === 0 ? "Free" : `₹${Number(tt.price).toLocaleString("en-IN")}`}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -111,8 +126,8 @@ export default function EventDetailPage() {
                     <span className="font-mono text-sm w-5 text-center">{quantities[tt.id] || 0}</span>
                     <button
                       type="button"
-                      disabled={(quantities[tt.id] || 0) >= tt.quantity_available}
-                      onClick={() => setQuantities((q) => ({ ...q, [tt.id]: Math.min(tt.quantity_available, (q[tt.id] || 0) + 1) }))}
+                      disabled={(quantities[tt.id] || 0) >= maxQuantity}
+                      onClick={() => setQuantities((q) => ({ ...q, [tt.id]: Math.min(maxQuantity, (q[tt.id] || 0) + 1) }))}
                       className="hairline w-7 h-7 text-sm hover:bg-ink hover:text-paper transition-colors disabled:opacity-30"
                     >
                       +
@@ -120,16 +135,17 @@ export default function EventDetailPage() {
                   </div>
                 </div>
                 <p className="text-xs text-muted mt-1">
-                  {tt.quantity_available > 0 ? `${tt.quantity_available} left` : "Sold out"}
+                  {unavailableReason ?? (tt.quantity_available > 0 ? `${tt.quantity_available} left` : "Sold out")}
                 </p>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {anySelected && (
             <div className="flex items-center justify-between mt-4 pt-4 border-t border-line text-sm">
               <span className="text-muted">Total</span>
-              <span className="font-mono">₹{total.toLocaleString("en-IN")}</span>
+              <span className="font-mono">{total === 0 ? "Free" : `₹${total.toLocaleString("en-IN")}`}</span>
             </div>
           )}
 
