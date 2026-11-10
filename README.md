@@ -6,6 +6,26 @@ A production-shaped event discovery, ticketing, payment, refund, notification, a
 
 EventSphere lets **organizers** create and publish events with multiple ticket types, **attendees** discover, reserve, and pay for tickets (Razorpay, Test Mode), and **admins** moderate the platform. Every write path is backed by real PostgreSQL state; RabbitMQ carries domain events between services for notifications and analytics; Redis enforces ticket-reservation concurrency so the system never oversells.
 
+### Screenshots
+
+| Home | Browse events |
+|---|---|
+| ![Home page with upcoming events](docs/screenshots/01-home.png) | ![Event listing with search and filters](docs/screenshots/02-browse-events.png) |
+
+| Event page and ticket selection | Checkout with reservation timer |
+|---|---|
+| ![Event detail with ticket selection](docs/screenshots/03-event-detail.png) | ![Checkout page holding the reservation](docs/screenshots/04-checkout.png) |
+
+| My bookings | My tickets |
+|---|---|
+| ![Bookings with status and actions](docs/screenshots/06-my-bookings.png) | ![Confirmed ticket](docs/screenshots/05-my-tickets.png) |
+
+| Admin: all events | Admin: platform analytics |
+|---|---|
+| ![Admin event moderation](docs/screenshots/07-admin-events.png) | ![Platform analytics](docs/screenshots/08-admin-analytics.png) |
+
+<p align="center"><img src="docs/screenshots/09-mobile-events.png" alt="Event listing on a phone" width="300"></p>
+
 ## 2. Architecture
 
 ```mermaid
@@ -156,39 +176,94 @@ event-sphere/
 └── README.md (this file)
 ```
 
-## 11. Local setup
+## 11. Running locally
 
+### What you need
+- **Docker Desktop** (Windows/macOS) or Docker Engine with Compose v2 (Linux). On Windows it uses WSL 2.
+- About **4 GB of free RAM** for Docker; the stack is 12 containers (14 with the optional viewers).
+- **Python 3** (any recent version) only for the demo-data script. Node.js is *not* needed; the frontend builds inside Docker.
+
+### First run
+1. **Get the code**
+   ```bash
+   git clone https://github.com/Nazeef1/events.git eventsphere
+   cd eventsphere
+   ```
+2. **Create your `.env`** from the template, then open it and fill in the values:
+   ```bash
+   cp .env.example .env
+   ```
+   | Setting | What to put |
+   |---|---|
+   | `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD` | Any password you like. These also log you into Adminer and RabbitMQ. |
+   | `JWT_SECRET` | A long random string, e.g. the output of `python -c "import secrets; print(secrets.token_hex(32))"` |
+   | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | Your Razorpay **Test Mode** keys (section 6). No keys yet? Set `PAYMENT_MODE=mock` instead. |
+   | `PAYMENT_MODE` | `razorpay` for real test-mode checkout, `mock` for the built-in simulator |
+   | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | The platform admin account, created automatically at startup |
+3. **Start everything.** The first build takes 5–10 minutes.
+   ```bash
+   docker compose --profile tools up -d --build
+   ```
+4. **Wait until it's healthy.** Every service should say `healthy` (the `*-migrate` jobs show `Exited (0)`, which is correct):
+   ```bash
+   docker compose ps
+   ```
+5. **Add demo events** (only needed on an empty database; safe to re-run):
+   ```bash
+   python scripts/seed_demo.py
+   ```
+6. Open **http://localhost:3000**, sign up as an attendee, and book something.
+
+### Where everything is
+| What | Address | Login |
+|---|---|---|
+| The app | http://localhost:3000 | Sign up, or the admin from `.env` |
+| API gateway | http://localhost:8080 | — |
+| API docs for each service | http://localhost:8001/docs … http://localhost:8007/docs | — |
+| Database browser (Adminer) | http://localhost:8081 | System `PostgreSQL`, server `postgres`, user/password = `POSTGRES_USER` / `POSTGRES_PASSWORD` |
+| Message queue (RabbitMQ) | http://localhost:15672 | `RABBITMQ_USER` / `RABBITMQ_PASSWORD` |
+| Redis browser | http://localhost:8082 | — |
+| Containers, logs, CPU/RAM | Docker Desktop → **Containers** → `eventsphere` | — |
+
+Ports 8001–8007 belong to identity, event, booking, payment, notification, refund, and analytics, in that order.
+
+### Everyday commands
 ```bash
-git clone <this-repo>
-cd event-sphere
-cp .env.example .env
-# edit .env: set JWT_SECRET, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET (see section 6)
-docker compose up --build
+docker compose --profile tools up -d      # start (or restart) everything
+docker compose stop                       # stop everything, keep data
+docker compose logs -f --tail 50          # follow all logs
+docker compose logs -f booking-service    # follow one service
+docker compose up -d --build payment-service   # rebuild one service after code changes
+docker compose up -d payment-service      # restart one service after editing .env
+docker compose down                       # remove containers, keep the database
 ```
+`docker compose down -v` also **deletes the database**. Use it only when you want a clean slate, then re-run the seed script.
 
-Once healthy:
-- Frontend: http://localhost:3000
-- API Gateway: http://localhost:8080 (all traffic goes through `/api/*`)
-- RabbitMQ management UI: http://localhost:15672 (user/pass from `.env`)
-- Individual services are also reachable directly on 8001–8007 for debugging.
+### Testing payments
+- `PAYMENT_MODE=razorpay`: the real Razorpay Test Mode window opens. Use an **Indian** test card such as Visa `4100 2800 0000 1007`, any future expiry, any CVV, and any 4–10 digit OTP. New Razorpay accounts reject international cards, including `4111 1111 1111 1111`.
+- `PAYMENT_MODE=mock`: a "Complete test payment" button replaces Razorpay. No keys are needed and no money moves. It is refused when `ENVIRONMENT=production`.
 
-First run automatically creates all 7 databases and runs Alembic migrations for every service (a one-shot `*-migrate` container runs `alembic upgrade head` before each service starts).
+### Troubleshooting
+- **`ports are not available` / `bind: address already in use`**: another program, or a second Docker engine (for example one installed inside WSL Ubuntu), already holds 3000, 8080, 5432, 5672, 6379, or 15672. Stop it, then start again.
+- **Adminer says `password authentication failed`**: use the password from `.env`, not the `change_me_locally` placeholder from `.env.example`. If you changed `POSTGRES_PASSWORD` after the first run, Postgres still has the old one; reset with `docker compose down -v`, which deletes the data.
+- **Razorpay says "Authentication failed"**: the key ID or secret in `.env` is wrong. Fix them, then run `docker compose up -d payment-service`.
+- **A service is `unhealthy`**: `docker compose logs <service>` shows why.
 
-Optional local conveniences, all set in `.env`:
-
-- `PAYMENT_MODE=mock` replaces Razorpay Checkout with a built-in simulator, so the whole booking, payment and refund flow works without keys. No money moves. It is refused when `ENVIRONMENT=production`.
-- `ADMIN_EMAIL` / `ADMIN_PASSWORD` create the platform admin at startup. Public sign-up can only create attendees and organizers.
-- `python scripts/seed_demo.py` fills an empty install with demo events.
-
-PostgreSQL, Redis, RabbitMQ, and the individual services publish on `127.0.0.1` only. For deployment, set `PUBLIC_API_BASE_URL` at build time, because Next.js inlines it into the browser bundle.
+First run creates all 7 databases and applies every service's migrations automatically: a one-shot `*-migrate` container runs `alembic upgrade head` before each service starts. PostgreSQL, Redis, RabbitMQ, the viewers, and the individual services listen on `127.0.0.1` only. For deployment, set `PUBLIC_API_BASE_URL` at build time, because Next.js inlines it into the browser bundle.
 
 ## 12. Testing
 
-Every service ships its own test suite (`services/<name>/tests/`), runnable independently:
+Every service ships its own test suite (`services/<name>/tests/`). The simplest way to run one is inside that service's own image, so nothing needs installing locally. For example, from the repo root once the stack has been built:
+
+```bash
+docker compose run --rm --no-deps -v ./services/identity-service:/app identity-service sh -c "pip install -q pytest httpx && python -m pytest -q"
+```
+
+Or with Python 3.11 directly:
 
 ```bash
 cd services/booking-service
-pip install -r requirements.txt
+pip install -r requirements.txt pytest httpx
 pytest
 ```
 
