@@ -1,0 +1,933 @@
+# identity-service: one replica. The init container applies database migrations before the app starts.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+  labels: {app: identity-service}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: identity-service}
+  template:
+    metadata:
+      labels: {app: identity-service}
+    spec:
+      initContainers:
+        - name: migrate
+          image: eventsphere/identity-service:local
+          imagePullPolicy: Never
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/identity_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+            - name: ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: ADMIN_EMAIL
+                  optional: true
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: ADMIN_PASSWORD
+                  optional: true
+      containers:
+        - name: app
+          image: eventsphere/identity-service:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/identity_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+            - name: ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: ADMIN_EMAIL
+                  optional: true
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: ADMIN_PASSWORD
+                  optional: true
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {memory: 320Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-service
+spec:
+  selector: {app: identity-service}
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# event-service: one replica. The init container applies database migrations before the app starts.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-service
+  labels: {app: event-service}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: event-service}
+  template:
+    metadata:
+      labels: {app: event-service}
+    spec:
+      initContainers:
+        - name: migrate
+          image: eventsphere/event-service:local
+          imagePullPolicy: Never
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/event_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+            - name: INTERNAL_KEY_BOOKING_TO_EVENT
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_BOOKING_TO_EVENT
+      containers:
+        - name: app
+          image: eventsphere/event-service:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/event_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+            - name: INTERNAL_KEY_BOOKING_TO_EVENT
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_BOOKING_TO_EVENT
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {memory: 320Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: event-service
+spec:
+  selector: {app: event-service}
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# booking-service: one replica. The init container applies database migrations before the app starts.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: booking-service
+  labels: {app: booking-service}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: booking-service}
+  template:
+    metadata:
+      labels: {app: booking-service}
+    spec:
+      initContainers:
+        - name: migrate
+          image: eventsphere/booking-service:local
+          imagePullPolicy: Never
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/booking_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+            - name: REDIS_URL
+              value: redis://redis:6379/0
+            - name: INTERNAL_KEY_BOOKING_TO_EVENT
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_BOOKING_TO_EVENT
+            - name: INTERNAL_KEY_PAYMENT_TO_BOOKING
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_PAYMENT_TO_BOOKING
+            - name: INTERNAL_KEY_REFUND_TO_BOOKING
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_REFUND_TO_BOOKING
+      containers:
+        - name: app
+          image: eventsphere/booking-service:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/booking_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+            - name: REDIS_URL
+              value: redis://redis:6379/0
+            - name: INTERNAL_KEY_BOOKING_TO_EVENT
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_BOOKING_TO_EVENT
+            - name: INTERNAL_KEY_PAYMENT_TO_BOOKING
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_PAYMENT_TO_BOOKING
+            - name: INTERNAL_KEY_REFUND_TO_BOOKING
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_REFUND_TO_BOOKING
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {memory: 320Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: booking-service
+spec:
+  selector: {app: booking-service}
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# payment-service: one replica. The init container applies database migrations before the app starts.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  labels: {app: payment-service}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: payment-service}
+  template:
+    metadata:
+      labels: {app: payment-service}
+    spec:
+      initContainers:
+        - name: migrate
+          image: eventsphere/payment-service:local
+          imagePullPolicy: Never
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/payment_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+            - name: INTERNAL_KEY_PAYMENT_TO_BOOKING
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_PAYMENT_TO_BOOKING
+            - name: INTERNAL_KEY_REFUND_TO_PAYMENT
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_REFUND_TO_PAYMENT
+            - name: RAZORPAY_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RAZORPAY_KEY_ID
+            - name: RAZORPAY_KEY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RAZORPAY_KEY_SECRET
+            - name: RAZORPAY_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RAZORPAY_WEBHOOK_SECRET
+                  optional: true
+            - name: PAYMENT_MODE
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: PAYMENT_MODE
+                  optional: true
+            - name: ENVIRONMENT
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: ENVIRONMENT
+                  optional: true
+      containers:
+        - name: app
+          image: eventsphere/payment-service:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/payment_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+            - name: INTERNAL_KEY_PAYMENT_TO_BOOKING
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_PAYMENT_TO_BOOKING
+            - name: INTERNAL_KEY_REFUND_TO_PAYMENT
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_REFUND_TO_PAYMENT
+            - name: RAZORPAY_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RAZORPAY_KEY_ID
+            - name: RAZORPAY_KEY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RAZORPAY_KEY_SECRET
+            - name: RAZORPAY_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RAZORPAY_WEBHOOK_SECRET
+                  optional: true
+            - name: PAYMENT_MODE
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: PAYMENT_MODE
+                  optional: true
+            - name: ENVIRONMENT
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: ENVIRONMENT
+                  optional: true
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {memory: 320Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+spec:
+  selector: {app: payment-service}
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# notification-service: one replica. The init container applies database migrations before the app starts.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  labels: {app: notification-service}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: notification-service}
+  template:
+    metadata:
+      labels: {app: notification-service}
+    spec:
+      initContainers:
+        - name: migrate
+          image: eventsphere/notification-service:local
+          imagePullPolicy: Never
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/notification_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+      containers:
+        - name: app
+          image: eventsphere/notification-service:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/notification_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {memory: 320Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+spec:
+  selector: {app: notification-service}
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# refund-service: one replica. The init container applies database migrations before the app starts.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: refund-service
+  labels: {app: refund-service}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: refund-service}
+  template:
+    metadata:
+      labels: {app: refund-service}
+    spec:
+      initContainers:
+        - name: migrate
+          image: eventsphere/refund-service:local
+          imagePullPolicy: Never
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/refund_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+            - name: INTERNAL_KEY_REFUND_TO_BOOKING
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_REFUND_TO_BOOKING
+            - name: INTERNAL_KEY_REFUND_TO_PAYMENT
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_REFUND_TO_PAYMENT
+      containers:
+        - name: app
+          image: eventsphere/refund-service:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/refund_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+            - name: INTERNAL_KEY_REFUND_TO_BOOKING
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_REFUND_TO_BOOKING
+            - name: INTERNAL_KEY_REFUND_TO_PAYMENT
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: INTERNAL_KEY_REFUND_TO_PAYMENT
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {memory: 320Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: refund-service
+spec:
+  selector: {app: refund-service}
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# analytics-service: one replica. The init container applies database migrations before the app starts.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-service
+  labels: {app: analytics-service}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: analytics-service}
+  template:
+    metadata:
+      labels: {app: analytics-service}
+    spec:
+      initContainers:
+        - name: migrate
+          image: eventsphere/analytics-service:local
+          imagePullPolicy: Never
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/analytics_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+      containers:
+        - name: app
+          image: eventsphere/analytics-service:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/analytics_db"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: JWT_SECRET
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_USER
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: eventsphere-env
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/%2F"
+            - name: CORS_ORIGINS
+              value: '["http://localhost:3000"]'
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {memory: 320Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-service
+spec:
+  selector: {app: analytics-service}
+  ports:
+    - port: 8000
+      targetPort: 8000

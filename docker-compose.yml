@@ -197,6 +197,7 @@ services:
     environment:
       <<: *python-service-env
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/event_db
+      INTERNAL_KEY_BOOKING_TO_EVENT: ${INTERNAL_KEY_BOOKING_TO_EVENT:?Set INTERNAL_KEY_BOOKING_TO_EVENT in .env (see .env.example)}
     depends_on:
       postgres: { condition: service_healthy }
       event-migrate: { condition: service_completed_successfully }
@@ -215,6 +216,9 @@ services:
     environment:
       <<: *python-service-env
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/booking_db
+      INTERNAL_KEY_BOOKING_TO_EVENT: ${INTERNAL_KEY_BOOKING_TO_EVENT:?Set INTERNAL_KEY_BOOKING_TO_EVENT in .env (see .env.example)}
+      INTERNAL_KEY_PAYMENT_TO_BOOKING: ${INTERNAL_KEY_PAYMENT_TO_BOOKING:?Set INTERNAL_KEY_PAYMENT_TO_BOOKING in .env (see .env.example)}
+      INTERNAL_KEY_REFUND_TO_BOOKING: ${INTERNAL_KEY_REFUND_TO_BOOKING:?Set INTERNAL_KEY_REFUND_TO_BOOKING in .env (see .env.example)}
       REDIS_URL: redis://redis:6379/0
       EVENT_SERVICE_URL: http://event-service:8000
     depends_on:
@@ -237,6 +241,8 @@ services:
     environment:
       <<: *python-service-env
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/payment_db
+      INTERNAL_KEY_PAYMENT_TO_BOOKING: ${INTERNAL_KEY_PAYMENT_TO_BOOKING:?Set INTERNAL_KEY_PAYMENT_TO_BOOKING in .env (see .env.example)}
+      INTERNAL_KEY_REFUND_TO_PAYMENT: ${INTERNAL_KEY_REFUND_TO_PAYMENT:?Set INTERNAL_KEY_REFUND_TO_PAYMENT in .env (see .env.example)}
       BOOKING_SERVICE_URL: http://booking-service:8000
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
@@ -281,6 +287,8 @@ services:
     environment:
       <<: *python-service-env
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/refund_db
+      INTERNAL_KEY_REFUND_TO_BOOKING: ${INTERNAL_KEY_REFUND_TO_BOOKING:?Set INTERNAL_KEY_REFUND_TO_BOOKING in .env (see .env.example)}
+      INTERNAL_KEY_REFUND_TO_PAYMENT: ${INTERNAL_KEY_REFUND_TO_PAYMENT:?Set INTERNAL_KEY_REFUND_TO_PAYMENT in .env (see .env.example)}
       PAYMENT_SERVICE_URL: http://payment-service:8000
       BOOKING_SERVICE_URL: http://booking-service:8000
     depends_on:
@@ -321,6 +329,7 @@ services:
     build:
       context: .
       dockerfile: api-gateway/Dockerfile
+    image: eventsphere/api-gateway:local
     restart: unless-stopped
     environment:
       JWT_SECRET: ${JWT_SECRET}
@@ -350,6 +359,7 @@ services:
       args:
         # NEXT_PUBLIC_* values are inlined at build time, so this must be a build arg.
         NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:8080/api}
+    image: eventsphere/frontend:local
     restart: unless-stopped
     depends_on:
       - api-gateway

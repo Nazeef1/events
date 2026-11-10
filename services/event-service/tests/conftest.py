@@ -3,6 +3,7 @@ import sys
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ["INTERNAL_KEY_BOOKING_TO_EVENT"] = "test-booking-to-event-key"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

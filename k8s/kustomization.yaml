@@ -1,0 +1,11 @@
+# kubectl apply -k k8s/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: eventsphere
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - redis.yaml
+  - rabbitmq.yaml
+  - services.yaml
+  - edge.yaml

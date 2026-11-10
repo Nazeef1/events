@@ -1,5 +1,6 @@
 import logging
 
+from eventsphere_common.service_auth import require_service
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -9,7 +10,8 @@ from ..models import Payment, PaymentStatus
 from ..schemas import PaymentOut
 
 logger = logging.getLogger("eventsphere.payment.internal")
-router = APIRouter(prefix="/internal/payments", tags=["internal"])
+# Only Refund Service may use these (zero trust: see eventsphere_common.service_auth).
+router = APIRouter(prefix="/internal/payments", tags=["internal"], dependencies=[Depends(require_service("payment", "refund"))])
 
 
 @router.get("/booking/{booking_id}", response_model=PaymentOut)

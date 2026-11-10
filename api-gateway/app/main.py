@@ -78,7 +78,8 @@ async def proxy(full_path: str, request: Request):
     base_url, downstream_path = resolved
 
     correlation_id = request.headers.get("x-correlation-id", str(uuid.uuid4()))
-    forward_headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_BY_HOP_HEADERS and k.lower() != "host"}
+    # Never let a browser supply a service identity header, even though only internal routes read it.
+    forward_headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_BY_HOP_HEADERS and k.lower() not in ("host", "x-service-token")}
     forward_headers["x-correlation-id"] = correlation_id
 
     body = await request.body()

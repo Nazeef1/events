@@ -1,5 +1,6 @@
 import httpx
 from eventsphere_common.bus import publish_event
+from eventsphere_common.service_auth import require_service
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -12,6 +13,11 @@ from ..redis_holds import ticket_hold_store
 from ..schemas import BookingOut
 
 router = APIRouter(prefix="/internal/bookings", tags=["internal"])
+
+# Who may call each internal route (zero trust: least privilege per route).
+from_payment = [Depends(require_service("booking", "payment"))]
+from_refund = [Depends(require_service("booking", "refund"))]
+no_service = [Depends(require_service("booking"))]  # kept for tooling; no service calls these today
 
 
 def _publish_safe(event_type: str, data: dict) -> None:
@@ -31,7 +37,7 @@ def restock_booking(booking: Booking) -> None:
         )
 
 
-@router.post("/{booking_id}/confirm", response_model=BookingOut)
+@router.post("/{booking_id}/confirm", response_model=BookingOut, dependencies=from_payment)
 def confirm_booking(booking_id: str, payment_id: str, db: Session = Depends(get_db)):
     """Called by Payment Service after a Razorpay signature has been verified."""
     booking = db.get(Booking, booking_id, options=[selectinload(Booking.items)])
@@ -79,7 +85,7 @@ def confirm_booking(booking_id: str, payment_id: str, db: Session = Depends(get_
     return booking
 
 
-@router.post("/{booking_id}/mark-expired", response_model=BookingOut)
+@router.post("/{booking_id}/mark-expired", response_model=BookingOut, dependencies=no_service)
 def mark_expired(booking_id: str, db: Session = Depends(get_db)):
     booking = db.get(Booking, booking_id, options=[selectinload(Booking.items)])
     if not booking:
@@ -93,7 +99,7 @@ def mark_expired(booking_id: str, db: Session = Depends(get_db)):
     return booking
 
 
-@router.get("/by-event/{event_id}", response_model=list[BookingOut])
+@router.get("/by-event/{event_id}", response_model=list[BookingOut], dependencies=from_refund)
 def bookings_by_event(event_id: str, booking_status: str | None = None, db: Session = Depends(get_db)):
     stmt = select(Booking).options(selectinload(Booking.items)).where(Booking.event_id == event_id)
     if booking_status:
@@ -101,13 +107,13 @@ def bookings_by_event(event_id: str, booking_status: str | None = None, db: Sess
     return db.execute(stmt).scalars().unique().all()
 
 
-@router.get("/organizer/{organizer_id}", response_model=list[BookingOut])
+@router.get("/organizer/{organizer_id}", response_model=list[BookingOut], dependencies=no_service)
 def bookings_by_organizer(organizer_id: str, db: Session = Depends(get_db)):
     stmt = select(Booking).options(selectinload(Booking.items)).where(Booking.organizer_id == organizer_id).order_by(Booking.created_at.desc())
     return db.execute(stmt).scalars().unique().all()
 
 
-@router.post("/{booking_id}/mark-refund-pending", response_model=BookingOut)
+@router.post("/{booking_id}/mark-refund-pending", response_model=BookingOut, dependencies=from_refund)
 def mark_refund_pending(booking_id: str, db: Session = Depends(get_db)):
     """Used when an organizer cancels an entire event: refund-service bulk-flags affected bookings."""
     booking = db.get(Booking, booking_id, options=[selectinload(Booking.items)])
@@ -121,7 +127,7 @@ def mark_refund_pending(booking_id: str, db: Session = Depends(get_db)):
     return booking
 
 
-@router.post("/{booking_id}/mark-refunded", response_model=BookingOut)
+@router.post("/{booking_id}/mark-refunded", response_model=BookingOut, dependencies=from_refund)
 def mark_refunded(booking_id: str, db: Session = Depends(get_db)):
     booking = db.get(Booking, booking_id, options=[selectinload(Booking.items)])
     if not booking:

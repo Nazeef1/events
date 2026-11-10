@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import httpx
+from eventsphere_common.service_auth import service_headers
 
 from .config import settings
 
@@ -19,7 +20,11 @@ class BookingServiceClient:
 
     def confirm_booking(self, booking_id: str, payment_id: str) -> dict:
         with httpx.Client(timeout=5.0) as client:
-            resp = client.post(f"{self._base}/internal/bookings/{booking_id}/confirm", params={"payment_id": payment_id})
+            resp = client.post(
+                f"{self._base}/internal/bookings/{booking_id}/confirm",
+                params={"payment_id": payment_id},
+                headers=service_headers("payment", "booking"),
+            )
             resp.raise_for_status()
             return resp.json()
 

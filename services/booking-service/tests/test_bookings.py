@@ -1,6 +1,24 @@
+import os
 import threading
 
 from conftest import auth_header
+from eventsphere_common.service_auth import service_headers
+
+os.environ["INTERNAL_KEY_PAYMENT_TO_BOOKING"] = "test-payment-to-booking-key"
+os.environ["INTERNAL_KEY_REFUND_TO_BOOKING"] = "test-refund-to-booking-key"
+
+
+def test_confirm_route_only_accepts_payment_service(client, mock_event_service):
+    mock_event_service["seed_event"]("evt-z")
+    mock_event_service["seed_ticket"]("tt-z", quantity_available=5)
+    headers, _ = auth_header("ATTENDEE")
+    booking_id = client.post("/bookings/reserve", json={"event_id": "evt-z", "items": [{"ticket_type_id": "tt-z", "quantity": 1}]}, headers=headers).json()["id"]
+    url = f"/internal/bookings/{booking_id}/confirm?payment_id=pay-1"
+
+    assert client.post(url).status_code == 401  # no service token
+    assert client.post(url, headers=service_headers("refund", "booking")).status_code == 403  # real service, wrong one
+    resp = client.post(url, headers=service_headers("payment", "booking"))
+    assert resp.status_code == 200 and resp.json()["status"] == "CONFIRMED"
 
 
 def test_reserve_success_and_conflict_on_insufficient_stock(client, mock_event_service):
@@ -63,6 +81,9 @@ def test_reserve_with_idempotency_key_returns_same_booking_on_retry(client, mock
     r2 = client.post("/bookings/reserve", json=body, headers={**headers, "Idempotency-Key": "regress-key-1"})
     assert r2.status_code == 201
     assert r1.json()["id"] == r2.json()["id"]  # same booking returned, not a duplicate
+
+
+def test_last_ticket_concurrent_reservation_never_oversells(client, mock_event_service):
     """
     The single most important correctness property of the Booking Service:
     with exactly 1 ticket remaining, 10 simultaneous requests race for it,

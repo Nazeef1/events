@@ -2,9 +2,11 @@ import os
 
 os.environ["JWT_SECRET"] = "test-secret"
 
+import time
 from datetime import datetime, timedelta, timezone
 
 from eventsphere_common.security import create_access_token
+from eventsphere_common.service_auth import service_headers
 
 ORGANIZER_ID = "org-1"
 OTHER_ORGANIZER_ID = "org-2"
@@ -83,9 +85,37 @@ def test_internal_decrement_is_idempotent(client):
     tt_id = event["ticket_types"][0]["id"]
 
     body = {"quantity": 1, "idempotency_key": "book-1"}
-    r1 = client.post(f"/internal/ticket-types/{tt_id}/decrement", json=body)
+    r1 = client.post(f"/internal/ticket-types/{tt_id}/decrement", json=body, headers=service_headers("booking", "event"))
     assert r1.json()["quantity_available"] == 1
 
     # retry with same idempotency key must not double-decrement
-    r2 = client.post(f"/internal/ticket-types/{tt_id}/decrement", json=body)
+    r2 = client.post(f"/internal/ticket-types/{tt_id}/decrement", json=body, headers=service_headers("booking", "event"))
     assert r2.json()["quantity_available"] == 1
+
+
+def test_internal_routes_reject_missing_forged_and_wrong_caller_tokens(client):
+    from jose import jwt
+
+    event = client.post("/events", json=_event_payload(), headers=_auth(ORGANIZER_ID, "ORGANIZER")).json()
+    url = f"/internal/ticket-types/{event['ticket_types'][0]['id']}"
+
+    assert client.get(url).status_code == 401  # no token at all
+    assert client.get(url, headers={"X-Service-Token": "not-a-jwt"}).status_code == 401
+
+    forged = jwt.encode({"iss": "booking", "aud": "event", "exp": time.time() + 60}, "guessed-key", algorithm="HS256")
+    assert client.get(url, headers={"X-Service-Token": forged}).status_code == 401  # right claims, wrong key
+
+    os.environ["INTERNAL_KEY_PAYMENT_TO_EVENT"] = "payment-key"
+    try:
+        # A validly signed token from a service that is simply not allowed here.
+        assert client.get(url, headers=service_headers("payment", "event")).status_code == 403
+    finally:
+        del os.environ["INTERNAL_KEY_PAYMENT_TO_EVENT"]
+
+    expired = jwt.encode({"iss": "booking", "aud": "event", "exp": time.time() - 5}, "test-booking-to-event-key", algorithm="HS256")
+    assert client.get(url, headers={"X-Service-Token": expired}).status_code == 401
+
+    wrong_audience = jwt.encode({"iss": "booking", "aud": "payment", "exp": time.time() + 60}, "test-booking-to-event-key", algorithm="HS256")
+    assert client.get(url, headers={"X-Service-Token": wrong_audience}).status_code == 401
+
+    assert client.get(url, headers=service_headers("booking", "event")).status_code == 200

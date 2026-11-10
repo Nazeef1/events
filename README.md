@@ -1,5 +1,7 @@
 # EventSphere
 
+[![CI](https://github.com/Nazeef1/events/actions/workflows/ci.yml/badge.svg)](https://github.com/Nazeef1/events/actions/workflows/ci.yml)
+
 A production-shaped event discovery, ticketing, payment, refund, notification, and analytics platform, built as independently-runnable microservices behind a single API Gateway.
 
 ## 1. Overview
@@ -147,13 +149,33 @@ Single topic exchange `eventsphere.events`; each service declares its own durabl
 
 Consumers are idempotent via a `processed_events(event_id)` ledger table — at-least-once delivery never produces duplicate notifications, refunds, or analytics counts (all covered by tests using a real local RabbitMQ broker).
 
+## 8a. Zero-trust service-to-service calls
+
+The gateway never exposes `/internal/*`, but being unreachable from the browser isn't the same as being safe. Without further checks, any container on the network could call "confirm this booking" or "issue this refund". So internal routes trust **no caller by network location**. Every internal request must prove which service sent it (`shared/common/eventsphere_common/service_auth.py`):
+
+- **A secret per caller→target pair**, held only by those two services: `INTERNAL_KEY_BOOKING_TO_EVENT`, `INTERNAL_KEY_PAYMENT_TO_BOOKING`, `INTERNAL_KEY_REFUND_TO_BOOKING`, `INTERNAL_KEY_REFUND_TO_PAYMENT`. A compromised service can't impersonate a different one.
+- **Short-lived signed tokens** in an `X-Service-Token` header, naming the caller (`iss`) and the intended target (`aud`), valid for 60 seconds. A token captured on its way to one service is rejected everywhere else.
+- **Least privilege per route.** Each internal route lists exactly who may call it:
+
+  | Route group | Allowed caller |
+  |---|---|
+  | Event `/internal/*` (stock, ticket types, summaries) | booking |
+  | Booking `/internal/bookings/{id}/confirm` | payment |
+  | Booking `by-event`, `mark-refund-pending`, `mark-refunded` | refund |
+  | Payment `/internal/payments/*` (lookup, refund) | refund |
+  | Booking `mark-expired`, `organizer/{id}` | nobody (unused, so locked) |
+
+- **Fail closed.** A missing key means the call is refused, never waved through. The gateway also strips any `X-Service-Token` a browser sends.
+
+Missing tokens get 401. A valid token from a service that isn't allowed on that route gets 403. User logins (the `Authorization` JWT) are a separate layer and unchanged. A natural next step is network-level enforcement with Kubernetes NetworkPolicies or mTLS (see `k8s/README.md`).
+
 ## 9. Technology stack
 
 Frontend: Next.js 14 (App Router) · TypeScript · Tailwind CSS · Recharts
 Backend: Python · FastAPI · SQLAlchemy 2.0 · Alembic · PostgreSQL · JWT (python-jose) · Argon2
-Infra: Docker Compose · RabbitMQ · Redis
+Infra: Docker Compose · Kubernetes (minikube manifests) · RabbitMQ · Redis
 Payments: Razorpay Standard Checkout (Test Mode)
-Testing: Pytest · HTTPX · FastAPI TestClient
+Testing & CI: Pytest · HTTPX · FastAPI TestClient · GitHub Actions
 
 ## 10. Repository structure
 
@@ -169,8 +191,11 @@ event-sphere/
 │   ├── analytics-service/
 │   └── refund-service/        each: app/, alembic/, tests/, Dockerfile, requirements.txt
 ├── api-gateway/                routing, correlation IDs, rate limiting
-├── shared/common/               eventsphere_common: JWT auth, RabbitMQ bus, DB session helpers
+├── shared/common/               eventsphere_common: JWT auth, service-to-service auth, RabbitMQ bus, DB helpers
 ├── infrastructure/postgres/     per-service database bootstrap script
+├── k8s/                         Kubernetes manifests for a single-machine (minikube) cluster
+├── scripts/seed_demo.py         demo events for an empty install
+├── .github/workflows/ci.yml     tests every service, builds the frontend, validates compose
 ├── docker-compose.yml
 ├── .env.example
 └── README.md (this file)
@@ -200,6 +225,7 @@ event-sphere/
    | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | Your Razorpay **Test Mode** keys (section 6). No keys yet? Set `PAYMENT_MODE=mock` instead. |
    | `PAYMENT_MODE` | `razorpay` for real test-mode checkout, `mock` for the built-in simulator |
    | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | The platform admin account, created automatically at startup |
+   | `INTERNAL_KEY_*` (4 keys) | A **different** long random value each, e.g. `python -c "import secrets; print(secrets.token_hex(32))"`. They secure service-to-service calls (section 8a). |
 3. **Start everything.** The first build takes 5–10 minutes.
    ```bash
    docker compose --profile tools up -d --build
@@ -267,7 +293,11 @@ pip install -r requirements.txt pytest httpx
 pytest
 ```
 
-Notably, `booking-service`, `notification-service`, `refund-service`, and `analytics-service` include tests that exercise **real local Redis and/or RabbitMQ** (not mocks) — including a genuine multi-threaded test proving the system cannot oversell the last remaining ticket under concurrent load.
+Notably, `booking-service`, `notification-service`, `refund-service`, and `analytics-service` include tests that exercise **real local Redis and/or RabbitMQ** (not mocks) — including a genuine multi-threaded test (`test_last_ticket_concurrent_reservation_never_oversells`) proving the system cannot oversell the last remaining ticket under concurrent load. Zero-trust checks are tested too: missing, forged, expired, wrong-audience and wrong-caller service tokens are all rejected.
+
+**Continuous integration.** `.github/workflows/ci.yml` runs on every push and pull request. It runs each service's suite in its own job against real Redis and RabbitMQ containers, builds the frontend with `npm ci` and `next build` (type-checking included), and validates `docker-compose.yml`. Results show on the repository's **Actions** tab and in the badge at the top of this file.
+
+**Kubernetes.** For learning, `k8s/` contains manifests that run the whole system on a single-machine minikube cluster. See [k8s/README.md](k8s/README.md) for the walkthrough and how each Compose idea maps to Kubernetes.
 
 ## 13. Deployment (AWS)
 

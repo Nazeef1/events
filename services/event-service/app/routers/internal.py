@@ -2,12 +2,13 @@
 Internal, service-to-service endpoints.
 
 These are not exposed to the browser (the API gateway does not route
-/internal/* publicly). Booking Service is the only caller: it reads
-ticket-type pricing/availability during reservation, and permanently
-adjusts inventory only after a payment is verified (decrement) or a
-confirmed booking is refunded/cancelled (increment).
+/internal/* publicly), and every request must carry a service token
+(see eventsphere_common.service_auth). Booking Service is the only allowed
+caller: it reads ticket-type pricing/availability during reservation, and
+permanently adjusts inventory only after a payment is verified (decrement)
+or a confirmed booking is refunded/cancelled (increment).
 """
-from eventsphere_common.auth_deps import CurrentUser, get_optional_user
+from eventsphere_common.service_auth import require_service
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -15,7 +16,7 @@ from ..database import get_db
 from ..models import AvailabilityAdjustment, Event, TicketType
 from ..schemas import AdjustAvailabilityRequest, TicketTypeOut
 
-router = APIRouter(prefix="/internal", tags=["internal"])
+router = APIRouter(prefix="/internal", tags=["internal"], dependencies=[Depends(require_service("event", "booking"))])
 
 
 @router.get("/ticket-types/{ticket_type_id}", response_model=TicketTypeOut)
