@@ -39,8 +39,9 @@ jobs:
           RABBITMQ_DEFAULT_PASS: ci
         ports: ["5672:5672"]
         # Probes the HTTP port rather than running rabbitmq-diagnostics, which can race the broker's boot.
+        # 127.0.0.1, not localhost: inside the container localhost resolves to ::1, where RabbitMQ isn't listening.
         options: >-
-          --health-cmd "wget -q --spider http://localhost:15672 || exit 1" --health-interval 10s --health-timeout 5s --health-retries 15
+          --health-cmd "wget -q --spider http://127.0.0.1:15672 || exit 1" --health-interval 5s --health-timeout 5s --health-retries 30
     env:
       TEST_REDIS_URL: redis://localhost:6379/0
       TEST_RABBITMQ_URL: amqp://ci:ci@localhost:5672/%2F
